@@ -1,0 +1,176 @@
+---
+title: "Nutritional Data"
+author: "Namratha"
+date: "1/6/2020"
+output: html_document
+runtime: shiny
+---
+
+
+
+```{r} 
+#using "Nutritional Data for Fast Foods.csv" to train a linear model and predict "Calories." we make sure to check all the assumptions of the linear model in this dataset. Then, use a stepwise linear model with both forward and backward elimination. Compare results. 
+
+
+rm(list= ls())
+setwd("C:\\Users\\nammu\\Desktop\\BA with R\\Assignment4")
+Nut = read.csv('Nutritional Data for Fast Foods.csv',check.names = F)
+library(GGally)
+library(ggplot2)
+head(Nut)
+str(Nut)
+summary(Nut)
+# There are NA's in 'Trans Fat (g)' column. let us see correlation of this variable with other variables
+cor(na.omit(Nut[,4:12]))
+
+# seems like 'Total Fat', 'Trans Fat (g)', 'Saturated Fat' are highly correlated. so, I will drop of 'Trans Fat (g)' and 'Saturated Fat' just to avoid multicolinearity and also, Trans fat has na's
+
+# I know this isn't the way to eliminate variables but I don't want to omit rows with NA.
+
+fat_trans = Nut$`Trans Fat (g)`
+fat_sat = Nut$`Saturated Fat (g)`
+
+Nut$`Trans Fat (g)` = NULL
+Nut$`Saturated Fat (g)` = NULL
+
+
+cor(na.omit(Nut[,4:10]))
+
+# calories is my dependent variable and rest are independent variable. Since I have Item variable and as well as type. I will use type for now and if I am not able to model it with remaining variables. I shall use Document term matrix of items.
+
+Items = Nut$Item
+Nut$Item = NULL
+
+Nut.dummy = as.data.frame(model.matrix(~`Fast Food Restaurant` + Type, data = Nut))
+Nut = cbind(Nut,Nut.dummy[,-1])
+
+Nut$`Fast Food Restaurant` = NULL
+Nut$Type = NULL
+head(Nut)
+str(Nut)
+```
+
+```{r}
+# Train test split
+set.seed(0)
+dim(Nut)
+
+s = sample(c(1:nrow(Nut)), nrow(Nut)*0.75)
+train.df = Nut[s,]
+valid.df = Nut[-s,]
+
+# I am excluding dummy variable in the plot for the sake of interpretation.
+ggpairs(data = train.df[,1:7])
+```
+
+```{r}
+
+# changing columns in both train and test for my convience
+colnames(train.df)[8] = "Carls_Jr."
+colnames(valid.df)[8] = "Carls_Jr."
+
+
+fit = lm(Calories~. , data = train.df)
+summary(fit)
+plot(fit)
+
+# Looking at the summary of linear regression model we can see that adjusted R square value and F test significance is high and model is a good fit.
+
+# Independent variables significance is high for "Serving Size, Total Fat, Carbs (g), Protein (g)" as part of numerical variables and presence of "Carl's Jr.", "Grilled Chicken Sandwich" has influence on Calories at 5% significance level.
+
+# plot 1 linearity assumption is true and residual are randomly scattered.
+# plot 2 qqplot of residuals prove that normality assumption is true. we can use Kolmogorov-Smirnov test and the Shapiro-Wilk but I will go right now with trust on qqplot.
+# plot 3 homoscedasticity (constant variance) of the errors is true.
+# Plot 4 There aren't any influencial outliers.
+
+###############  Testing on Validation data set.
+
+test.pred <- predict(fit,newdata=valid.df)
+test.y    <- valid.df$Calories
+
+print(paste0("RMSE on test data set is ", sqrt(mean((test.pred - test.y)^2))))
+# RMSE value is 26.78 which isn't bad compaired to the scale of calories.
+
+ggplot(data.frame(test.pred,test.y), mapping = aes(x = test.pred,y = test.y))+ geom_point() + geom_line(data.frame(test.y,test.y), mapping = aes(x = test.y,y = test.y))
+
+# we can see from above plot between actual and predicted is close to y =x line.
+
+
+```
+
+```{r}
+# I use only above mentioned variables which has significance on dependent variable.
+
+# changing columns in both train and test for my convience
+colnames(train.df)[8] = "Carls_Jr."
+colnames(valid.df)[8] = "Carls_Jr."
+
+fit_new = lm(Calories~ `Serving Size (g)` + `Total Fat (g)` + `Carbs (g)` + `Protein (g)` + `TypeGrilled Chicken Sandwich` + Carls_Jr., data = train.df)
+summary(fit_new)
+plot(fit_new)
+
+# now the model performance is even better as the previous model is taking all variables including the non significant onces 
+
+# plot 1 linearity assumption is true and residual are randomly scattered.
+# plot 2 qqplot of residuals prove that normality assumption is true. we can use Kolmogorov-Smirnov test and the Shapiro-Wilk but I will go right now with trust on qqplot.
+# plot 3 homoscedasticity (constant variance) of the errors is true.
+# Plot 4 There aren't any influencial outliers.
+
+###############  Testing on Validation data set.
+
+test.pred <- predict(fit_new,newdata=valid.df)
+test.y    <- valid.df$Calories
+
+print(paste0("RMSE on test data set is ", sqrt(mean((test.pred - test.y)^2))))
+# RMSE value is 25.95 which is even better than previous model.
+
+ggplot(data.frame(test.pred,test.y), mapping = aes(x = test.pred,y = test.y))+ geom_point() + geom_line(data.frame(test.y,test.y), mapping = aes(x = test.y,y = test.y))
+
+# we can see from above plot between actual and predicted is close to y =x line.
+
+
+```
+
+```{r}
+########## variable selection using Forward selection 
+library(MASS)
+
+step.fit = stepAIC(fit, direction = "forward")
+
+summary(step.fit)
+
+# Forward selection method has poor performance compared to manual selction. as the variablity explained by independent variables(adj R-sqrd) is 0.9917 compared to 0.9921 in manual selection.
+
+
+```
+
+```{r}
+########## variable selection using backward elimination
+
+step.fit = stepAIC(fit, direction = "backward")
+summary(step.fit)
+
+# backward elimination method has better performance compared to manual selction. as the variablity explained by independent variables(adj R-sqrd) is 0.9924 compared to 0.9921 in manual selection.
+
+# final model in this method uses same variables as in manual selection but also includes "Sodium", "Jack in the box" and "wendy".
+
+# I would prefer less variables model as increase in no of variables increases the no of contrains on the model which might be less realistic. I have taken model performance into consideration which doesn't change much i.e. 0.9924(BCK), 0.9921(MNL),0.9917(FWD).
+
+
+```
+
+```{r}
+###### testing stepwise model.
+
+test.pred <- predict(step.fit,newdata=valid.df)
+test.y    <- valid.df$Calories
+
+print(paste0("RMSE on test data set is ", sqrt(mean((test.pred - test.y)^2))))
+# RMSE value is 25.88.
+
+ggplot(data.frame(test.pred,test.y), mapping = aes(x = test.pred,y = test.y))+ geom_point() + geom_line(data.frame(test.y,test.y), mapping = aes(x = test.y,y = test.y))
+
+
+
+```
+
